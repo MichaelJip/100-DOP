@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import numpy as np
 import os
 
 class Linear_QNet(nn.Module):
@@ -45,6 +46,7 @@ class QTrainer:
         next_state = torch.tensor(next_state, dtype=torch.float)
         action = torch.tensor(action, dtype=torch.long)
         reward = torch.tensor(reward, dtype=torch.float)
+        done = torch.tensor(np.array(done), dtype=torch.bool)
         # (n, x)
 
         if len(state.shape) == 1:
@@ -53,26 +55,32 @@ class QTrainer:
             next_state = torch.unsqueeze(next_state, 0)
             action = torch.unsqueeze(action, 0)
             reward = torch.unsqueeze(reward, 0)
-            done = (done, )
+            done = torch.unsqueeze(done, 0)
 
         # 1: predicted Q Values with current state
         pred = self.model(state)
+        action_idx = torch.argmax(action, dim=1, keepdim=True)
+        pred_taken = pred.gather(1, action_idx).squeeze(1)
 
-        target = pred.clone()
-        for idx in range(len(done)):
-            Q_new = reward[idx]
-            if not done[idx]:
-                Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
+        # the target must be constant -> no gradients flow through it
+        with torch.no_grad():
+            next_q = self.model(next_state).max(dim=1).values
+            target = reward + self.gamma * next_q * (~done)
+
+        # target = pred.clone()
+        # for idx in range(len(done)):
+        #     Q_new = reward[idx]
+        #     if not done[idx]:
+        #         Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
             
-            target[idx][torch.argmax(action[idx]).item()] = Q_new
+        #     target[idx][torch.argmax(action[idx]).item()] = Q_new
             
         # 2: Q_new = r (reward) + y (gamma) * max(next_predicted Q Value)
         # pred.clone()
         # pred[argmax(action)] = Q_new
 
         self.optimizer.zero_grad()
-        loss = self.criterion(target, pred)
+        loss = self.criterion(pred_taken, target)
         loss.backward()
-
         self.optimizer.step()
 
