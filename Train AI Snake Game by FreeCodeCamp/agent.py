@@ -9,6 +9,9 @@ from helper import plot
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
 LR = 0.001
+EPS_START = 1.0 # 100% random at the very beginning
+EPS_MIN = 0.002 # never explore less than 2%
+EPS_DECAY = 0.96 # multiply by this every game
 
 class Agent:
 
@@ -124,25 +127,45 @@ class Agent:
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def get_action(self, state):
-        # random moves: tradeOff exploration / exploitation
-        if self.loaded:
-            self.epsilon = 0
-        else:
-            self.epsilon = 80 - self.n_game
+    # def get_action(self, state):
+    #     # random moves: tradeOff exploration / exploitation
+    #     if self.loaded:
+    #         self.epsilon = 0
+    #     else:
+    #         self.epsilon = 80 - self.n_game
             
-        final_move = [0, 0 ,0]
+    #     final_move = [0, 0 ,0]
 
-        if random.randint(0,200) < self.epsilon:
-            move = random.randint(0, 2)
-            final_move[move] = 1
-        else:
-            state0 = torch.tensor(state, dtype=torch.float)
-            prediction = self.model(state0)
-            move = torch.argmax(prediction).item()
-            final_move[move] = 1
+    #     if random.randint(0,200) < self.epsilon:
+    #         move = random.randint(0, 2)
+    #         final_move[move] = 1
+    #     else:
+    #         state0 = torch.tensor(state, dtype=torch.float)
+    #         prediction = self.model(state0)
+    #         move = torch.argmax(prediction).item()
+    #         final_move[move] = 1
 
-        return final_move
+    #     return final_move
+
+    def get_action(self, state):
+            # exploration/exploitation tradeoff: epsilon = chance of a random move
+            if self.loaded:
+                self.epsilon = max(EPS_MIN, 0.05 * (EPS_DECAY ** self.n_game))
+            else:
+                self.epsilon = max(EPS_MIN, EPS_START * (EPS_DECAY ** self.n_game))
+                
+            final_move = [0, 0 ,0]
+
+            if random.random() < self.epsilon:
+                move = random.randint(0, 2)
+                final_move[move] = 1
+            else:
+                state0 = torch.tensor(state, dtype=torch.float)
+                prediction = self.model(state0)
+                move = torch.argmax(prediction).item()
+                final_move[move] = 1
+
+            return final_move
 
 def train():
     plot_score = []
